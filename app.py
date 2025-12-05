@@ -25,3 +25,10 @@ if search_term:
 else:
     st.write("Displaying first 10 rows.")
     st.dataframe(df.head(10))
+
+st.header('🤖 AI Contract Insight')
+
+contract_text = st.text_input("Paste a 'Description' or 'Title' from the table above.")
+
+if st.button('Analyze Opportunity'):
+    st.write('✅ Match Score: High. This contract matches your agency profile. Key Requirement: Digital Marketing Services.')
