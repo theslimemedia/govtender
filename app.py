@@ -61,16 +61,45 @@ def inject_custom_css():
 
 inject_custom_css()
 
-# --- Data Loading ---
+# --- Data Loading & Cleaning ---
 @st.cache_data
 def load_data():
     url = "https://open.canada.ca/data/dataset/6abd20d4-7a1c-4b38-baa2-9525d0bb2fd2/resource/05b804dd-11ec-4271-8d69-d6044e1a5481/download/f-new_tender_notices.csv"
     storage_options = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
     try:
         df = pd.read_csv(url, storage_options=storage_options, encoding='utf-8')
+
+        # Define potential bilingual column names and their English mapping
+        column_map = {
+            'Title': ['title-titre-eng', 'title-titre', 'title_en'],
+            'Category': ['procurementCategory-categorieApprovisionnement'],
+            'Status': ['tenderStatus-tenderStatut-eng', 'tenderStatus-tenderStatut'],
+            'Closing Date': ['dateClosing-dateCloture', 'closing_date'],
+            'GSIN': ['gsin-nins', 'gsin'],
+            'Description': ['description_en', 'description-eng']
+        }
+
+        rename_dict = {}
+        for eng_name, bilingual_names in column_map.items():
+            for bilingual_name in bilingual_names:
+                if bilingual_name in df.columns:
+                    rename_dict[bilingual_name] = eng_name
+                    break # Move to the next English name once a match is found
+
+        df.rename(columns=rename_dict, inplace=True)
+        
+        # If 'GSIN' column is still missing after trying to rename, create it with a default value.
+        if 'GSIN' not in df.columns:
+            df['GSIN'] = 'General'
+        
+        # Ensure essential columns exist, fill with defaults if not
+        for col in ['Title', 'Closing Date', 'Description', 'GSIN']:
+             if col not in df.columns:
+                df[col] = f'No {col} Available'
+
         return df
     except Exception as e:
-        st.error(f"Error loading data: {e}")
+        st.error(f"Error loading and processing data: {e}")
         return pd.DataFrame()
 
 df = load_data()
@@ -80,30 +109,38 @@ st.title("GovTender Autopilot")
 
 # --- Sidebar Filters ---
 st.sidebar.header("Filters")
-if not df.empty:
-    # Using 'gsin' for category as it seems to be a good categorical identifier.
-    # We will handle potential missing values.
-    df['gsin'] = df['gsin'].fillna('Not Specified')
-    categories = ['All'] + sorted(df['gsin'].unique().tolist())
+if not df.empty and 'GSIN' in df.columns:
+    df['GSIN'] = df['GSIN'].fillna('Not Specified')
+    categories = ['All'] + sorted(df['GSIN'].unique().tolist())
     selected_category = st.sidebar.selectbox("Category (GSIN)", categories)
 
-    # Filtering logic
-    if selected_category != 'All':
-        filtered_df = df[df['gsin'] == selected_category]
+    if 'Status' in df.columns:
+        df['Status'] = df['Status'].fillna('Unknown')
+        statuses = ['All'] + sorted(df['Status'].unique().tolist())
+        selected_status = st.sidebar.selectbox("Status", statuses)
     else:
-        filtered_df = df
+        selected_status = 'All'
+
+
+    # Filtering logic
+    filtered_df = df.copy()
+    if selected_category != 'All':
+        filtered_df = filtered_df[filtered_df['GSIN'] == selected_category]
+    if selected_status != 'All' and 'Status' in filtered_df.columns:
+        filtered_df = filtered_df[filtered_df['Status'] == selected_status]
+
 else:
     filtered_df = pd.DataFrame()
-    st.sidebar.write("No data to filter.")
+    st.sidebar.write("No data to filter or GSIN column is missing.")
 
 
 # --- Main Area: Contract Cards ---
 if not filtered_df.empty:
     st.write(f"Displaying top 10 of {len(filtered_df)} contracts.")
     for index, row in filtered_df.head(10).iterrows():
-        title = row.get('title_en', 'No Title Available')
-        closing_date = row.get('closing_date', 'N/A')
-        description = row.get('description_en', 'No Description')
+        title = row.get('Title', 'No Title Available')
+        closing_date = row.get('Closing Date', 'N/A')
+        description = row.get('Description', 'No Description Available')
 
         card_html = f"""
         <div class="contract-card">
@@ -117,7 +154,6 @@ if not filtered_df.empty:
             st.write(description)
             if st.button('✨ Analyze Opportunity', key=f"analyze_{index}"):
                 try:
-                    # Check for OpenAI API key in secrets
                     if 'OPENAI_API_KEY' in st.secrets:
                         openai.api_key = st.secrets["OPENAI_API_KEY"]
                         prompt = f"Analyze the following government contract and provide a brief 'Winning Strategy' for a company specializing in digital marketing and web development. Contract Title: '{title}', Description: '{description}'"
@@ -140,4 +176,3 @@ if not filtered_df.empty:
 
 else:
     st.write("No contracts to display based on the current filters.")
-
