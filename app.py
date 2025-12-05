@@ -7,7 +7,8 @@ st.title('GovTender Autopilot')
 @st.cache_data
 def load_data():
     url = "https://open.canada.ca/data/dataset/6abd20d4-7a1c-4b38-baa2-9525d0bb2fd2/resource/05b804dd-11ec-4271-8d69-d6044e1a5481/download/f-new_tender_notices.csv"
-    df = pd.read_csv(url)
+    storage_options = {'User-Agent': 'Mozilla/5.0'}
+    df = pd.read_csv(url, storage_options=storage_options)
     return df
 
 df = load_data()
