@@ -43,6 +43,7 @@ def inject_custom_css():
                 margin-bottom: 15px;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                 border: 1px solid #e6e6e6;
+                color: #1d1d1f !important; /* CRITICAL FIX: Force dark text */
             }
             .contract-title {
                 font-weight: bold;
@@ -50,7 +51,7 @@ def inject_custom_css():
                 margin-bottom: 5px;
             }
             .closing-date {
-                color: #8e8e93;
+                color: #86868b; /* Lighter gray for this specific text */
                 font-size: 0.9em;
                 margin-bottom: 15px;
             }
@@ -78,7 +79,8 @@ def load_data():
             'title-titre': 'Title',
             'title_en': 'Title',
             'description_en': 'Description',
-            'description-eng': 'Description'
+            'description-eng': 'Description',
+            'description-description-eng': 'Description' # New mapping
         }, inplace=True)
 
         # Handle the GSIN column
@@ -87,11 +89,18 @@ def load_data():
         else:
             df['GSIN'] = 'General'
 
-        # Ensure essential columns exist after renaming, preventing KeyErrors
+        # Ensure essential columns exist after renaming
         essential_columns = ['Title', 'Closing Date', 'Description', 'GSIN', 'Category', 'Status']
         for col in essential_columns:
             if col not in df.columns:
-                df[col] = f'No {col} Available'
+                df[col] = pd.NA # Use pandas NA for consistency
+
+        # Smart Fallbacks
+        df['Closing Date'] = df['Closing Date'].fillna('Open Continuous')
+        if 'Title' in df.columns:
+             df['Description'] = df['Description'].fillna(df['Title'])
+        df['Description'] = df['Description'].fillna('No Description Available') # Final fallback
+
 
         return df
     except Exception as e:
@@ -106,8 +115,6 @@ st.title("GovTender Autopilot")
 # --- Sidebar Filters ---
 st.sidebar.header("Filters")
 if not df.empty:
-    # Using 'GSIN' for category as it seems to be a good categorical identifier.
-    # We will handle potential missing values.
     df['GSIN'] = df['GSIN'].fillna('Not Specified')
     categories = ['All'] + sorted(df['GSIN'].unique().tolist())
     selected_category = st.sidebar.selectbox("Category (GSIN)", categories)
@@ -115,7 +122,6 @@ if not df.empty:
     df['Status'] = df['Status'].fillna('Unknown')
     statuses = ['All'] + sorted(df['Status'].unique().tolist())
     selected_status = st.sidebar.selectbox("Status", statuses)
-
 
     # Filtering logic
     filtered_df = df.copy()
@@ -137,12 +143,12 @@ if not filtered_df.empty:
         closing_date = row.get('Closing Date', 'N/A')
         description = row.get('Description', 'No Description Available')
 
-        card_html = f"""
+        card_html = f'''
         <div class="contract-card">
             <div class="contract-title">{title}</div>
             <div class="closing-date">Closes: {closing_date}</div>
         </div>
-        """
+        '''
         st.markdown(card_html, unsafe_allow_html=True)
 
         with st.expander("Details"):
