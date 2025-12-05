@@ -100,7 +100,7 @@ def load_data():
         if 'Title' in df.columns:
              df['Description'] = df['Description'].fillna(df['Title'])
         df['Description'] = df['Description'].fillna('No Description Available') # Final fallback
-
+        df['Category'] = df['Category'].fillna('N/A').astype(str) # Ensure category is searchable
 
         return df
     except Exception as e:
@@ -111,6 +111,9 @@ df = load_data()
 
 # --- Main Layout ---
 st.title("GovTender Autopilot")
+
+search_term = st.text_input("🔍 Search Contracts")
+
 
 # --- Sidebar Filters ---
 st.sidebar.header("Filters")
@@ -130,14 +133,26 @@ if not df.empty:
     if selected_status != 'All':
         filtered_df = filtered_df[filtered_df['Status'] == selected_status]
 
+    # Search filtering
+    if search_term:
+        search_term_lower = search_term.lower()
+        filtered_df = filtered_df[
+            filtered_df['Title'].str.lower().str.contains(search_term_lower, na=False) |
+            filtered_df['Description'].str.lower().str.contains(search_term_lower, na=False) |
+            filtered_df['Category'].str.lower().str.contains(search_term_lower, na=False)
+        ]
+
+
 else:
     filtered_df = pd.DataFrame()
     st.sidebar.write("No data to filter.")
 
 
 # --- Main Area: Contract Cards ---
+st.write(f"Found {len(filtered_df)} contracts.")
+
 if not filtered_df.empty:
-    st.write(f"Displaying top 10 of {len(filtered_df)} contracts.")
+    st.write(f"Displaying top 10.")
     for index, row in filtered_df.head(10).iterrows():
         title = row.get('Title', 'No Title Available')
         closing_date = row.get('Closing Date', 'N/A')
