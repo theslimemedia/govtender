@@ -1,7 +1,7 @@
 
 import streamlit as st
 import pandas as pd
-from openai import OpenAI
+import google.generativeai as genai
 
 # Set page config
 st.set_page_config(layout="wide")
@@ -155,23 +155,18 @@ if not filtered_df.empty:
             st.write(description)
             if st.button('✨ Analyze Opportunity', key=f"analyze_{index}"):
                 try:
-                    if 'OPENAI_API_KEY' in st.secrets:
-                        client = OpenAI(api_key=st.secrets['OPENAI_API_KEY'])
+                    if 'GEMINI_API_KEY' in st.secrets:
+                        genai.configure(api_key=st.secrets['GEMINI_API_KEY'])
+                        model = genai.GenerativeModel('gemini-1.5-flash')
                         prompt = f"Analyze the following government contract and provide a brief 'Winning Strategy' for a company specializing in digital marketing and web development. Contract Title: '{title}', Description: '{description}'"
                         
                         with st.spinner("🤖 AI is analyzing..."):
-                            response = client.chat.completions.create(
-                                model="gpt-3.5-turbo",
-                                messages=[
-                                    {"role": "system", "content": "You are a helpful assistant that provides concise winning strategies for government contracts."},
-                                    {"role": "user", "content": prompt}
-                                ]
-                            )
-                            strategy = response.choices[0].message.content
+                            response = model.generate_content(prompt)
+                            strategy = response.text
                             st.success("**Winning Strategy:**")
                             st.write(strategy)
                     else:
-                        st.warning('⚠️ AI Brain Missing. Please add OpenAI Key to Secrets.')
+                        st.warning('⚠️ AI Brain Missing. Please add Gemini API Key to Secrets.')
                 except Exception as e:
                     st.error(f"An error occurred with the AI analysis: {e}")
 
