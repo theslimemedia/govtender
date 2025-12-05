@@ -69,32 +69,28 @@ def load_data():
     try:
         df = pd.read_csv(url, storage_options=storage_options, encoding='utf-8')
 
-        # Define potential bilingual column names and their English mapping
-        column_map = {
-            'Title': ['title-titre-eng', 'title-titre', 'title_en'],
-            'Category': ['procurementCategory-categorieApprovisionnement'],
-            'Status': ['tenderStatus-tenderStatut-eng', 'tenderStatus-tenderStatut'],
-            'Closing Date': ['dateClosing-dateCloture', 'closing_date'],
-            'GSIN': ['gsin-nins', 'gsin'],
-            'Description': ['description_en', 'description-eng']
-        }
+        # Robustly rename columns
+        df.rename(columns={
+            'procurementCategory-categorieApprovisionnement': 'Category',
+            'tenderStatus-tenderStatut-eng': 'Status',
+            'dateClosing-dateCloture': 'Closing Date',
+            'title-titre-eng': 'Title',
+            'title-titre': 'Title',
+            'title_en': 'Title',
+            'description_en': 'Description',
+            'description-eng': 'Description'
+        }, inplace=True)
 
-        rename_dict = {}
-        for eng_name, bilingual_names in column_map.items():
-            for bilingual_name in bilingual_names:
-                if bilingual_name in df.columns:
-                    rename_dict[bilingual_name] = eng_name
-                    break # Move to the next English name once a match is found
-
-        df.rename(columns=rename_dict, inplace=True)
-        
-        # If 'GSIN' column is still missing after trying to rename, create it with a default value.
-        if 'GSIN' not in df.columns:
+        # Handle the GSIN column
+        if 'gsin-nins' in df.columns:
+            df.rename(columns={'gsin-nins': 'GSIN'}, inplace=True)
+        else:
             df['GSIN'] = 'General'
-        
-        # Ensure essential columns exist, fill with defaults if not
-        for col in ['Title', 'Closing Date', 'Description', 'GSIN']:
-             if col not in df.columns:
+
+        # Ensure essential columns exist after renaming, preventing KeyErrors
+        essential_columns = ['Title', 'Closing Date', 'Description', 'GSIN', 'Category', 'Status']
+        for col in essential_columns:
+            if col not in df.columns:
                 df[col] = f'No {col} Available'
 
         return df
@@ -109,29 +105,28 @@ st.title("GovTender Autopilot")
 
 # --- Sidebar Filters ---
 st.sidebar.header("Filters")
-if not df.empty and 'GSIN' in df.columns:
+if not df.empty:
+    # Using 'GSIN' for category as it seems to be a good categorical identifier.
+    # We will handle potential missing values.
     df['GSIN'] = df['GSIN'].fillna('Not Specified')
     categories = ['All'] + sorted(df['GSIN'].unique().tolist())
     selected_category = st.sidebar.selectbox("Category (GSIN)", categories)
-
-    if 'Status' in df.columns:
-        df['Status'] = df['Status'].fillna('Unknown')
-        statuses = ['All'] + sorted(df['Status'].unique().tolist())
-        selected_status = st.sidebar.selectbox("Status", statuses)
-    else:
-        selected_status = 'All'
+    
+    df['Status'] = df['Status'].fillna('Unknown')
+    statuses = ['All'] + sorted(df['Status'].unique().tolist())
+    selected_status = st.sidebar.selectbox("Status", statuses)
 
 
     # Filtering logic
     filtered_df = df.copy()
     if selected_category != 'All':
         filtered_df = filtered_df[filtered_df['GSIN'] == selected_category]
-    if selected_status != 'All' and 'Status' in filtered_df.columns:
+    if selected_status != 'All':
         filtered_df = filtered_df[filtered_df['Status'] == selected_status]
 
 else:
     filtered_df = pd.DataFrame()
-    st.sidebar.write("No data to filter or GSIN column is missing.")
+    st.sidebar.write("No data to filter.")
 
 
 # --- Main Area: Contract Cards ---
