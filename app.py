@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 import google.generativeai as genai
+from datetime import datetime
 
 # Set page config
 st.set_page_config(layout="wide")
@@ -55,6 +56,10 @@ def inject_custom_css():
                 font-size: 0.9em;
                 margin-bottom: 15px;
             }
+            .urgent-label {
+                color: #ff3b30;
+                font-weight: bold;
+            }
         </style>
         """,
         unsafe_allow_html=True,
@@ -80,7 +85,8 @@ def load_data():
             'title_en': 'Title',
             'description_en': 'Description',
             'description-eng': 'Description',
-            'description-description-eng': 'Description' # New mapping
+            'description-description-eng': 'Description',
+            'procurementOrganization-organisationApprovisionnement-eng': 'Authority'
         }, inplace=True)
 
         # Handle the GSIN column
@@ -90,7 +96,7 @@ def load_data():
             df['GSIN'] = 'General'
 
         # Ensure essential columns exist after renaming
-        essential_columns = ['Title', 'Closing Date', 'Description', 'GSIN', 'Category', 'Status']
+        essential_columns = ['Title', 'Closing Date', 'Description', 'GSIN', 'Category', 'Status', 'Authority']
         for col in essential_columns:
             if col not in df.columns:
                 df[col] = pd.NA # Use pandas NA for consistency
@@ -101,6 +107,14 @@ def load_data():
              df['Description'] = df['Description'].fillna(df['Title'])
         df['Description'] = df['Description'].fillna('No Description Available') # Final fallback
         df['Category'] = df['Category'].fillna('N/A').astype(str) # Ensure category is searchable
+        df['Authority'] = df['Authority'].fillna('N/A')
+
+        # Data Cleaning & Sorting
+        df['Closing Date'] = pd.to_datetime(df['Closing Date'], errors='coerce')
+        df.dropna(subset=['Closing Date'], inplace=True) # Remove rows where date conversion failed
+        df = df[df['Closing Date'] >= datetime.now()]
+        df = df.sort_values(by='Closing Date', ascending=True)
+
 
         return df
     except Exception as e:
@@ -111,6 +125,23 @@ df = load_data()
 
 # --- Main Layout ---
 st.title("GovTender Autopilot")
+
+# --- Feature A (CFO Metrics) ---
+if not df.empty:
+    total_active_leads = len(df)
+    top_category = df['Category'].mode()[0] if not df['Category'].mode().empty else "N/A"
+    next_deadline = df['Closing Date'].min().strftime('%Y-%m-%d') if not df.empty else "N/A"
+
+    st.subheader("CFO Metrics")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Active Leads", total_active_leads)
+    col2.metric("Top Category", top_category)
+    col3.metric("Next Deadline", next_deadline)
+
+    st.subheader("Contracts by Category")
+    category_counts = df['Category'].value_counts().nlargest(7)
+    st.bar_chart(category_counts)
+
 
 search_term = st.text_input("🔍 Search Contracts")
 
@@ -155,35 +186,66 @@ if not filtered_df.empty:
     st.write(f"Displaying top 10.")
     for index, row in filtered_df.head(10).iterrows():
         title = row.get('Title', 'No Title Available')
-        closing_date = row.get('Closing Date', 'N/A')
+        closing_date = row.get('Closing Date')
         description = row.get('Description', 'No Description Available')
+        authority = row.get('Authority', 'N/A')
+
+
+        # Feature B (Smart Cards)
+        urgent_label = ""
+        if closing_date and (closing_date - datetime.now()).days <= 7:
+            urgent_label = "<span class='urgent-label'>🔥 Urgent</span>"
+
 
         card_html = f'''
         <div class="contract-card">
             <div class="contract-title">{title}</div>
-            <div class="closing-date">Closes: {closing_date}</div>
+            <div class="closing-date">Closes: {closing_date.strftime('%Y-%m-%d')} {urgent_label}</div>
         </div>
         '''
         st.markdown(card_html, unsafe_allow_html=True)
 
         with st.expander("Details"):
             st.write(description)
-            if st.button('✨ Analyze Opportunity', key=f"analyze_{index}"):
-                try:
-                    if 'GEMINI_API_KEY' in st.secrets:
-                        genai.configure(api_key=st.secrets['GEMINI_API_KEY'])
-                        model = genai.GenerativeModel('gemini-1.5-flash')
-                        prompt = f"Analyze the following government contract and provide a brief 'Winning Strategy' for a company specializing in digital marketing and web development. Contract Title: '{title}', Description: '{description}'"
-                        
-                        with st.spinner("🤖 AI is analyzing..."):
-                            response = model.generate_content(prompt)
-                            strategy = response.text
-                            st.success("**Winning Strategy:**")
-                            st.write(strategy)
-                    else:
-                        st.warning('⚠️ AI Brain Missing. Please add Gemini API Key to Secrets.')
-                except Exception as e:
-                    st.error(f"An error occurred with the AI analysis: {e}")
+            # Feature C (The Closer)
+            strategy_tab, email_tab = st.tabs(["📊 Strategy", "✉️ Draft Email"])
+
+            with strategy_tab:
+                if st.button('✨ Analyze Opportunity', key=f"analyze_{index}"):
+                    try:
+                        if 'GEMINI_API_KEY' in st.secrets:
+                            genai.configure(api_key=st.secrets['GEMINI_API_KEY'])
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            prompt = f"Analyze the following government contract and provide a brief 'Winning Strategy' for a company specializing in digital marketing and web development. Contract Title: '{title}', Description: '{description}'"
+                            
+                            with st.spinner("🤖 AI is analyzing..."):
+                                response = model.generate_content(prompt)
+                                strategy = response.text
+                                st.success("**Winning Strategy:**")
+                                st.write(strategy)
+                        else:
+                            st.warning('⚠️ AI Brain Missing. Please add Gemini API Key to Secrets.')
+                    except Exception as e:
+                        st.error(f"An error occurred with the AI analysis: {e}")
+            
+            with email_tab:
+                if st.button('✍️ Generate Draft', key=f"draft_{index}"):
+                    try:
+                        if 'GEMINI_API_KEY' in st.secrets:
+                            genai.configure(api_key=st.secrets['GEMINI_API_KEY'])
+                            model = genai.GenerativeModel('gemini-1.5-flash')
+                            prompt = f"Please draft a professional and formal inquiry email to the Contracting Authority, {authority}, regarding the tender titled '{title}'. The email should express interest and ask for any available clarification documents."
+
+                            with st.spinner("🤖 AI is drafting..."):
+                                response = model.generate_content(prompt)
+                                email_draft = response.text
+                                st.success("**Draft Email:**")
+                                st.text_area("Email Body",email_draft, height=300)
+                        else:
+                            st.warning('⚠️ AI Brain Missing. Please add Gemini API Key to Secrets.')
+                    except Exception as e:
+                        st.error(f"An error occurred with the AI email generation: {e}")
+
 
 else:
     st.write("No contracts to display based on the current filters.")
